@@ -78,6 +78,7 @@ public:
             targetPose.theta = theta; 
             RCLCPP_INFO(this->get_logger(),"NEW TARGET AQUIRED -> x: %f | y: %f | theta: %f",targetPose.x,targetPose.y,targetPose.theta);
             this->rotateAtan2();
+            this->go2Goal();
             response->response = true;
         }
         
@@ -98,6 +99,19 @@ public:
         }
         auto cmdVel = geometry_msgs::msg::Twist();
         cmdVel.angular.z = 0.0;
+        this->velPublisher->publish(cmdVel);
+    }
+
+    void go2Goal(void){
+        this->computeEuclideanDistance();
+        while(distanceError > distanceThreshold){
+            this->computeEuclideanDistance();
+            auto cmdVel = geometry_msgs::msg::Twist();
+            cmdVel.linear.x = 0.2;
+            this->velPublisher->publish(cmdVel);
+        }
+        auto cmdVel = geometry_msgs::msg::Twist();
+        cmdVel.linear.x = 0.0;
         this->velPublisher->publish(cmdVel);
     }
 
@@ -124,15 +138,33 @@ public:
         angularError = M_PI;
     }
 
+    void computeEuclideanDistance(void){
+        float xTarget,yTarget;
+        float xCurr,yCurr;
+        float xDiff, yDiff;
+        // target position
+        xTarget = targetPose.x;
+        yTarget = targetPose.y;
+        // current position
+        xCurr = currentPose.x;
+        yCurr = currentPose.y;
+        // difference
+        xDiff = xTarget-xCurr;
+        yDiff = yTarget-yCurr;
+        distanceError = sqrt(pow(xDiff,2)+pow(yDiff,2));
+    }
+
 private:
     // subscribers, publishers & services
     rclcpp::Subscription<turtlesim::msg::Pose>::SharedPtr poseSubscriber;
     rclcpp::Service<controller_interfaces::srv::TargetPosition>::SharedPtr targetService;
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr velPublisher;
+    
     // important placeholders
     turtlesim::msg::Pose currentPose;
     turtlesim::msg::Pose targetPose;
     float angularError;
+    float distanceError;
     float angularThreshold;
     float distanceThreshold;
 
