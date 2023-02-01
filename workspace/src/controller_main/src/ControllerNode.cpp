@@ -79,6 +79,7 @@ public:
             RCLCPP_INFO(this->get_logger(),"NEW TARGET AQUIRED -> x: %f | y: %f | theta: %f",targetPose.x,targetPose.y,targetPose.theta);
             this->rotateAtan2();
             this->go2Goal();
+            this->rotateFinal();
             response->response = true;
         }
         
@@ -115,6 +116,21 @@ public:
         this->velPublisher->publish(cmdVel);
     }
 
+    void rotateFinal(void){
+        this->initializeAngularError();
+        while(angularError > angularThreshold){
+            this->updateAngularError2();
+            auto cmdVel = geometry_msgs::msg::Twist();
+            cmdVel.angular.z = 0.2;
+            this->velPublisher->publish(cmdVel);
+        }
+        auto cmdVel = geometry_msgs::msg::Twist();
+        cmdVel.angular.z = 0.0;
+        this->velPublisher->publish(cmdVel);    
+    }
+
+
+    // this is used to rotate towards the target position
     void updateAngularError(void){
         float xTarget,yTarget,thetaTarget;
         float xCurr,yCurr,thetaCurr;
@@ -130,6 +146,15 @@ public:
         xDiff = xTarget-xCurr;
         yDiff = yTarget-yCurr;
         thetaTarget = atan2(yDiff,xDiff);
+        thetaDiff = abs(thetaTarget-thetaCurr);
+        angularError = thetaDiff;
+    }
+
+    // this is used to rotate towards the final position
+    void updateAngularError2(void){
+        float thetaTarget,thetaCurr,thetaDiff;
+        thetaCurr = currentPose.theta;
+        thetaTarget = targetPose.theta;
         thetaDiff = abs(thetaTarget-thetaCurr);
         angularError = thetaDiff;
     }
