@@ -18,7 +18,10 @@ public:
         this->declare_parameter("queue_size",10);
         this->declare_parameter("target_service","/target_service");
         this->declare_parameter("stop_thresholds",std::vector<double>{0.05,0.2}); // order -> {angular,distance}
-    
+        this->declare_parameter("base_speeds",std::vector<double>{0.4,1.5}); // order -> {min,max}
+        this->declare_parameter("controller_gains",std::vector<double>{0.05,2.0}); // order -> {kp,kd}
+
+
         // fetch parameters
         poseTopic = this->get_parameter("pose_topic").as_string();
         velTopic = this->get_parameter("vel_topic").as_string();
@@ -27,6 +30,12 @@ public:
         std::vector<double> thresholds = this->get_parameter("stop_thresholds").as_double_array();
         angularThreshold = (float) thresholds[0];
         distanceThreshold = (float) thresholds[1];
+        std::vector<double> speeds = this->get_parameter("base_speeds").as_double_array();
+        minLinearSpeed = (float) speeds[0];
+        maxLinearSpeed = (float) speeds[1];
+        std::vector<double> gains =  this->get_parameter("controller_gains").as_double_array();
+        kp = (float) speeds[0];
+        kd = (float) speeds[1];
 
         // create callback groups
     
@@ -95,7 +104,7 @@ public:
         while(angularError > angularThreshold){
             this->updateAngularError();
             auto cmdVel = geometry_msgs::msg::Twist();
-            cmdVel.angular.z = 0.2;
+            cmdVel.angular.z = angularError * kp + (angularError-pastAngularError) * kd;
             this->velPublisher->publish(cmdVel);
         }
         auto cmdVel = geometry_msgs::msg::Twist();
@@ -104,11 +113,14 @@ public:
     }
 
     void go2Goal(void){
-        this->computeEuclideanDistance();
+        this->updateDistanceError();
+        this->initializeMaxScale();
+        float speed;
         while(distanceError > distanceThreshold){
-            this->computeEuclideanDistance();
+            this->updateDistanceError();
             auto cmdVel = geometry_msgs::msg::Twist();
-            cmdVel.linear.x = 0.2;
+            speed = distanceError * (maxLinearSpeed / maxScale);
+            cmdVel.linear.x = speed > minLinearSpeed ? speed : minLinearSpeed;
             this->velPublisher->publish(cmdVel);
         }
         auto cmdVel = geometry_msgs::msg::Twist();
@@ -121,7 +133,7 @@ public:
         while(angularError > angularThreshold){
             this->updateAngularError2();
             auto cmdVel = geometry_msgs::msg::Twist();
-            cmdVel.angular.z = 0.2;
+            cmdVel.angular.z = angularError * kp + (angularError-pastAngularError) * kd;
             this->velPublisher->publish(cmdVel);
         }
         auto cmdVel = geometry_msgs::msg::Twist();
@@ -147,6 +159,7 @@ public:
         yDiff = yTarget-yCurr;
         thetaTarget = atan2(yDiff,xDiff);
         thetaDiff = abs(thetaTarget-thetaCurr);
+        pastAngularError = angularError;
         angularError = thetaDiff;
     }
 
@@ -156,14 +169,25 @@ public:
         thetaCurr = currentPose.theta;
         thetaTarget = targetPose.theta;
         thetaDiff = abs(thetaTarget-thetaCurr);
+        pastAngularError = angularError;
         angularError = thetaDiff;
     }
 
     void initializeAngularError(void){
         angularError = M_PI;
+        pastAngularError = M_PI;
     }
 
-    void computeEuclideanDistance(void){
+
+    void updateDistanceError(void){
+        distanceError = this->computeEuclideanDistance();
+    }
+
+    void initializeMaxScale(void){
+        maxScale = this->computeEuclideanDistance();
+    }
+
+    float computeEuclideanDistance(void){
         float xTarget,yTarget;
         float xCurr,yCurr;
         float xDiff, yDiff;
@@ -176,7 +200,7 @@ public:
         // difference
         xDiff = xTarget-xCurr;
         yDiff = yTarget-yCurr;
-        distanceError = sqrt(pow(xDiff,2)+pow(yDiff,2));
+        return sqrt(pow(xDiff,2)+pow(yDiff,2));
     }
 
 private:
@@ -189,6 +213,7 @@ private:
     turtlesim::msg::Pose currentPose;
     turtlesim::msg::Pose targetPose;
     float angularError;
+    float pastAngularError;
     float distanceError;
     float angularThreshold;
     float distanceThreshold;
@@ -198,6 +223,15 @@ private:
     std::string serviceName;
     std::string velTopic;
     int queueSize;
+
+    // gains
+    float kp;
+    float kd;
+
+    // speed controller stuff
+    float maxLinearSpeed;
+    float minLinearSpeed;
+    float maxScale; 
 
     // callback group options
     rclcpp::CallbackGroup::SharedPtr subCallbackGroup;
