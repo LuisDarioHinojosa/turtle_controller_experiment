@@ -100,11 +100,12 @@ public:
 
     // other
     void rotateAtan2(void){
+        directionFactor = 1.0;
         this->initializeAngularError();
         while(angularError > angularThreshold){
             this->updateAngularError();
             auto cmdVel = geometry_msgs::msg::Twist();
-            cmdVel.angular.z = angularError * kp + (angularError-pastAngularError) * kd;
+            cmdVel.angular.z = directionFactor * (angularError * kp + (angularError-pastAngularError) * kd);
             this->velPublisher->publish(cmdVel);
         }
         auto cmdVel = geometry_msgs::msg::Twist();
@@ -129,11 +130,12 @@ public:
     }
 
     void rotateFinal(void){
+        directionFactor = 1.0;
         this->initializeAngularError();
         while(angularError > angularThreshold){
             this->updateAngularError2();
             auto cmdVel = geometry_msgs::msg::Twist();
-            cmdVel.angular.z = angularError * kp + (angularError-pastAngularError) * kd;
+            cmdVel.angular.z = directionFactor * (angularError * kp + (angularError-pastAngularError) * kd);
             this->velPublisher->publish(cmdVel);
         }
         auto cmdVel = geometry_msgs::msg::Twist();
@@ -158,9 +160,10 @@ public:
         xDiff = xTarget-xCurr;
         yDiff = yTarget-yCurr;
         thetaTarget = atan2(yDiff,xDiff);
-        thetaDiff = abs(thetaTarget-thetaCurr);
+        thetaDiff = thetaTarget-thetaCurr;
         pastAngularError = angularError;
-        angularError = thetaDiff;
+        angularError = abs(thetaDiff);
+        this->calculateFactor(thetaDiff);
     }
 
     // this is used to rotate towards the final position
@@ -168,9 +171,10 @@ public:
         float thetaTarget,thetaCurr,thetaDiff;
         thetaCurr = currentPose.theta;
         thetaTarget = targetPose.theta;
-        thetaDiff = abs(thetaTarget-thetaCurr);
+        thetaDiff = thetaTarget-thetaCurr;
         pastAngularError = angularError;
-        angularError = thetaDiff;
+        angularError = abs(thetaDiff);
+        this->calculateFactor(thetaDiff);
     }
 
     void initializeAngularError(void){
@@ -203,6 +207,24 @@ public:
         return sqrt(pow(xDiff,2)+pow(yDiff,2));
     }
 
+    // calculate factor
+    void calculateFactor(float thetaDiff){
+
+        if(angularError > M_PI && thetaDiff > 0){
+            directionFactor = -1.0;
+        }
+        else if(angularError > M_PI && thetaDiff < 0){
+            directionFactor = 1.0;
+        }
+        else if(angularError < M_PI && thetaDiff < 0){
+            directionFactor = -1.0;
+        }
+        else{
+            directionFactor = 1.0;
+        }
+        
+    }
+
 private:
     // subscribers, publishers & services
     rclcpp::Subscription<turtlesim::msg::Pose>::SharedPtr poseSubscriber;
@@ -217,6 +239,7 @@ private:
     float distanceError;
     float angularThreshold;
     float distanceThreshold;
+    float directionFactor;
 
     // parameters
     std::string poseTopic;
